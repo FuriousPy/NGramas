@@ -69,6 +69,13 @@ public class NGramCounter {
         private Text result = new Text();
         private static final String DELIMITER = ",";
 
+        private int minFrequency;
+
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+            minFrequency = context.getConfiguration().getInt("minFrequency", 1);
+        }
+
         public void reduce(Text key, Iterable<Text> values, Context context)
                 throws IOException, InterruptedException {
             int sum = 0;
@@ -84,21 +91,29 @@ public class NGramCounter {
                 }
             }
 
-            StringBuilder resultStr = new StringBuilder();
-            resultStr.append(sum).append("\t");
-            resultStr.append(String.join(", ", files));
-            result.set(resultStr.toString());
-            context.write(key, result);
+            if (sum >= minFrequency) {
+                StringBuilder resultStr = new StringBuilder();
+                resultStr.append(sum).append("\t");
+                resultStr.append(String.join(", ", files));
+                result.set(resultStr.toString());
+                context.write(key, result);
+            }
         }
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length != 4) {
+            System.err.println("Uso: NGramCounter <n> <minFrequency> <inputPath> <outputPath>");
+            System.exit(2);
+        }
+
         // Configuración de Hadoop
         Configuration conf = new Configuration();
         conf.setInt("n", Integer.parseInt(args[0])); // Valor de N
+        conf.setInt("minFrequency", Integer.parseInt(args[1])); // Número mínimo de n-gramas
 
         // Eliminar el directorio de salida si existe
-        Path outputPath = new Path(args[2]);
+        Path outputPath = new Path(args[3]);
         FileSystem fs = outputPath.getFileSystem(conf);
         if (fs.exists(outputPath)) {
             fs.delete(outputPath, true);
@@ -113,7 +128,7 @@ public class NGramCounter {
         job.setOutputValueClass(Text.class);
 
         // Directorio de entrada y salida
-        FileInputFormat.addInputPath(job, new Path(args[1])); // Directorio de entrada
+        FileInputFormat.addInputPath(job, new Path(args[2])); // Directorio de entrada
         FileOutputFormat.setOutputPath(job, outputPath); // Directorio de salida
 
         // Ejecutar el trabajo MapReduce
