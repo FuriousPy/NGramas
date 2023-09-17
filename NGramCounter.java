@@ -1,4 +1,8 @@
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.StringTokenizer;
 
 import org.apache.hadoop.conf.Configuration;
@@ -14,15 +18,25 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class NGramCounter {
 
-    public static class NGramMapper extends Mapper<Object, Text, Text, IntWritable> {
-        private final static IntWritable one = new IntWritable(1);
-        private Text word = new Text();
+    public static class NGramMapper extends Mapper<Object, Text, Text, Text> {
+        private static final Text outKey = new Text();
+        private static final Text outValue = new Text();
+        private static final String DELIMITER = ",";
+
+        private Map<String, String> fileMap;
+
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+            fileMap = new HashMap<>();
+        }
 
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
             // Tokenizar el texto en n-gramas (bi-gramas, tri-gramas, etc.)
             String line = value.toString();
             String[] words = line.split("\\s+");
             int n = context.getConfiguration().getInt("n", 2); // Obtener el valor de N
+            String fileName = ((org.apache.hadoop.mapreduce.lib.input.FileSplit) context.getInputSplit()).getPath().getName();
+
             if (words.length >= n) {
                 for (int i = 0; i <= words.length - n; i++) {
                     StringBuilder ngram = new StringBuilder();
@@ -30,23 +44,50 @@ public class NGramCounter {
                         if (j > 0) ngram.append(" ");
                         ngram.append(words[i + j]);
                     }
-                    word.set(ngram.toString());
-                    context.write(word, one);
+                    outKey.set(ngram.toString());
+                    String fileValue = fileMap.getOrDefault(outKey.toString(), "");
+                    if (!fileValue.isEmpty()) {
+                        fileValue += DELIMITER;
+                    }
+                    fileValue += fileName;
+                    fileMap.put(outKey.toString(), fileValue);
                 }
+            }
+        }
+
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            for (Map.Entry<String, String> entry : fileMap.entrySet()) {
+                outKey.set(entry.getKey());
+                outValue.set(entry.getValue());
+                context.write(outKey, outValue);
             }
         }
     }
 
-    public static class NGramReducer extends Reducer<Text, IntWritable, Text, IntWritable> {
-        private IntWritable result = new IntWritable();
+    public static class NGramReducer extends Reducer<Text, Text, Text, Text> {
+        private Text result = new Text();
+        private static final String DELIMITER = ",";
 
-        public void reduce(Text key, Iterable<IntWritable> values, Context context)
+        public void reduce(Text key, Iterable<Text> values, Context context)
                 throws IOException, InterruptedException {
             int sum = 0;
-            for (IntWritable val : values) {
-                sum += val.get();
+            List<String> files = new ArrayList<>();
+
+            for (Text val : values) {
+                String[] parts = val.toString().split(DELIMITER);
+                sum += parts.length;
+                for (String file : parts) {
+                    if (!files.contains(file)) {
+                        files.add(file);
+                    }
+                }
             }
-            result.set(sum);
+
+            StringBuilder resultStr = new StringBuilder();
+            resultStr.append(sum).append("\t");
+            resultStr.append(String.join(", ", files));
+            result.set(resultStr.toString());
             context.write(key, result);
         }
     }
@@ -67,10 +108,9 @@ public class NGramCounter {
         Job job = Job.getInstance(conf, "n-gram count");
         job.setJarByClass(NGramCounter.class);
         job.setMapperClass(NGramMapper.class);
-        job.setCombinerClass(NGramReducer.class);
         job.setReducerClass(NGramReducer.class);
         job.setOutputKeyClass(Text.class);
-        job.setOutputValueClass(IntWritable.class);
+        job.setOutputValueClass(Text.class);
 
         // Directorio de entrada y salida
         FileInputFormat.addInputPath(job, new Path(args[1])); // Directorio de entrada
