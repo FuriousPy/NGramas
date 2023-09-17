@@ -2,6 +2,7 @@ import java.io.IOException;
 import java.util.StringTokenizer;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
@@ -51,9 +52,18 @@ public class NGramCounter {
     }
 
     public static void main(String[] args) throws Exception {
+        // Configuración de Hadoop
         Configuration conf = new Configuration();
         conf.setInt("n", Integer.parseInt(args[0])); // Valor de N
 
+        // Eliminar el directorio de salida si existe
+        Path outputPath = new Path(args[2]);
+        FileSystem fs = outputPath.getFileSystem(conf);
+        if (fs.exists(outputPath)) {
+            fs.delete(outputPath, true);
+        }
+
+        // Configuración del trabajo MapReduce
         Job job = Job.getInstance(conf, "n-gram count");
         job.setJarByClass(NGramCounter.class);
         job.setMapperClass(NGramMapper.class);
@@ -62,9 +72,11 @@ public class NGramCounter {
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(IntWritable.class);
 
+        // Directorio de entrada y salida
         FileInputFormat.addInputPath(job, new Path(args[1])); // Directorio de entrada
-        FileOutputFormat.setOutputPath(job, new Path(args[2])); // Directorio de salida
+        FileOutputFormat.setOutputPath(job, outputPath); // Directorio de salida
 
+        // Ejecutar el trabajo MapReduce
         System.exit(job.waitForCompletion(true) ? 0 : 1);
     }
 }
