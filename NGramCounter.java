@@ -107,14 +107,30 @@ public class NGramCounter {
             System.exit(2);
         }
 
-        // Configuración de Hadoop
+        // Verificar que args[0] y args[1] sean numéricos
+        try {
+            int n = Integer.parseInt(args[0]);
+            int minFrequency = Integer.parseInt(args[1]);
+        } catch (NumberFormatException e) {
+            System.err.println("Los valores de n y minFrequency deben ser numéricos.");
+            System.exit(1);
+        }
+
+        // Verificar la existencia del directorio de entrada
         Configuration conf = new Configuration();
+        Path inputPath = new Path(args[2]);
+        FileSystem fs = inputPath.getFileSystem(conf);
+        if (!fs.exists(inputPath)) {
+            System.err.println("El directorio de entrada no existe: " + args[2]);
+            System.exit(1);
+        }
+
+        // Configuración de Hadoop
         conf.setInt("n", Integer.parseInt(args[0])); // Valor de N
         conf.setInt("minFrequency", Integer.parseInt(args[1])); // Número mínimo de n-gramas
 
         // Eliminar el directorio de salida si existe
         Path outputPath = new Path(args[3]);
-        FileSystem fs = outputPath.getFileSystem(conf);
         if (fs.exists(outputPath)) {
             fs.delete(outputPath, true);
         }
@@ -128,7 +144,7 @@ public class NGramCounter {
         job.setOutputValueClass(Text.class);
 
         // Directorio de entrada y salida
-        FileInputFormat.addInputPath(job, new Path(args[2])); // Directorio de entrada
+        FileInputFormat.addInputPath(job, inputPath); // Directorio de entrada
         FileOutputFormat.setOutputPath(job, outputPath); // Directorio de salida
 
         // Ejecutar el trabajo MapReduce
